@@ -563,6 +563,13 @@ fn addGtkNg(
     const target = step.root_module.resolved_target.?;
     const optimize = step.root_module.optimize.?;
 
+    if (target.result.os.tag == .linux) {
+        step.addCSourceFile(.{
+            .file = b.path("src/apprt/gtk/dmabuf_probe.c"),
+            .flags = &.{"-std=c11"},
+        });
+    }
+
     const gobject_ = b.lazyDependency("gobject", .{
         .target = target,
         .optimize = optimize,

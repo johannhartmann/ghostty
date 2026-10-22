@@ -43,6 +43,11 @@ const GlobalShortcuts = @import("global_shortcuts.zig").GlobalShortcuts;
 
 const log = std.log.scoped(.gtk_ghostty_application);
 
+/// Probe before GTK initializes so a corrupt EGL DMA-BUF implementation
+/// can be bypassed without disabling OpenGL rendering or native Wayland.
+const DmabufProbeResult = enum(c_int) { unavailable, intact, corrupted };
+extern fn ghostty_gtk_dmabuf_probe() DmabufProbeResult;
+
 /// Function used to funnel GLib/GObject/GTK log messages into Zig's logging
 /// system rather than just getting dumped directly to stderr.
 fn glibLogWriterFunction(
@@ -2841,7 +2846,21 @@ fn setGtkEnv(config: *const CoreConfig) error{NoSpaceLeft}!void {
         /// milliseconds on some systems. We don't use Vulkan so we can just
         /// disable it.
         vulkan: bool = false,
+        /// GtkGLArea can export a valid GL texture into a DMA-BUF that the
+        /// driver silently corrupts on import. Keep the GL texture path then.
+        dmabuf: bool = false,
     } = .{};
+
+    if (@import("builtin").os.tag == .linux and
+        gtk_version.runtimeAtLeast(4, 16, 0) and
+        ghostty_gtk_dmabuf_probe() == .corrupted)
+    {
+        log.warn(
+            "NVIDIA EGL DMA-BUF round trip corrupted pixels; disabling GTK DMA-BUF presentation (OpenGL remains enabled)",
+            .{},
+        );
+        gdk_disable.dmabuf = true;
+    }
 
     environment: {
         if (gtk_version.runtimeAtLeast(4, 18, 0)) {
